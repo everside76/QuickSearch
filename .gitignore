@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# PyInstaller 산출물
+build/
+dist/
+*.manifest
+
+# 로컬 로그 / 캐시
+*.log
+*.pkl
+
+# 업데이트 임시 파일
+*.exe.new

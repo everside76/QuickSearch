@@ -1,0 +1,109 @@
+* {
+    font-family: "맑은 고딕", "Malgun Gothic", "Segoe UI", sans-serif;
+}
+
+#rootFrame {
+    background-color: rgba(28, 28, 30, 238);
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 28);
+}
+
+#titleBar {
+    background: transparent;
+}
+
+#titleLabel {
+    color: rgba(235, 235, 245, 140);
+    font-size: 9pt;
+    letter-spacing: 0.5px;
+}
+
+#trayButton, #closeButton {
+    background: transparent;
+    color: rgba(235, 235, 245, 180);
+    border: none;
+    border-radius: 6px;
+    font-size: 14pt;
+    font-weight: 400;
+    padding: 0;
+}
+
+#trayButton:hover {
+    background-color: rgba(255, 255, 255, 28);
+    color: #ffffff;
+}
+
+#closeButton:hover {
+    background-color: #E81123;
+    color: #ffffff;
+}
+
+#trayButton:pressed, #closeButton:pressed {
+    background-color: rgba(255, 255, 255, 50);
+}
+
+#searchInput {
+    background: transparent;
+    color: #ffffff;
+    border: none;
+    padding: 0 22px;
+    font-size: 18pt;
+    font-weight: 300;
+    selection-background-color: #3478F6;
+}
+
+#statusLabel {
+    color: rgba(235, 235, 245, 150);
+    padding: 0 24px 10px 24px;
+    font-size: 9pt;
+}
+
+#divider {
+    background-color: rgba(255, 255, 255, 22);
+    max-height: 1px;
+    min-height: 1px;
+    border: none;
+}
+
+#resultList {
+    background: transparent;
+    color: #ffffff;
+    border: none;
+    padding: 8px 10px;
+    outline: 0;
+}
+
+#resultList::item {
+    border-radius: 10px;
+    padding: 0;
+    margin: 2px 6px;
+    color: #ffffff;
+}
+
+#resultList::item:hover {
+    background-color: rgba(255, 255, 255, 22);
+}
+
+#resultList::item:selected {
+    background-color: #3478F6;
+    color: #ffffff;
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    margin: 4px 2px 4px 0;
+}
+
+QScrollBar::handle:vertical {
+    background: rgba(255, 255, 255, 70);
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+    height: 0;
+    border: none;
+}
