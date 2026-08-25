@@ -45,12 +45,43 @@ jobs:
       - name: exe 빌드
         run: pyinstaller --noconfirm QuickSearch.spec
 
+      - name: Inno Setup 준비
+        shell: pwsh
+        run: |
+          $root = "C:\Program Files (x86)\Inno Setup 6"
+          if (-not (Test-Path "$root\ISCC.exe")) {
+            choco install innosetup -y --no-progress | Out-Null
+          }
+          if (-not (Test-Path "$root\ISCC.exe")) { throw "Inno Setup 을 찾을 수 없습니다." }
+          # 한국어 번역은 기본 배포에 없어 공식 저장소에서 받아 넣는다.
+          # 실패해도 빌드는 계속 — 설치 마법사가 영어로 표시될 뿐이다.
+          $korean = "$root\Languages\Korean.isl"
+          if (-not (Test-Path $korean)) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -OutFile $korean `
+                -Uri "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/Korean.isl"
+              Write-Host "Korean.isl 설치됨"
+            } catch {
+              Write-Warning "Korean.isl 을 받지 못했습니다. 설치 마법사는 영어로 표시됩니다."
+            }
+          }
+
+      - name: 설치 프로그램 빌드
+        shell: pwsh
+        run: |
+          $version = (python -c "import sys; sys.path.insert(0, '.'); from core.version import __version__; print(__version__)").Trim()
+          Write-Host "설치 프로그램 버전: $version"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" installer\QuickSearch.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC 컴파일 실패 (exit $LASTEXITCODE)" }
+
       - name: SHA-256 체크섬 생성
         shell: pwsh
         run: |
-          $hash = (Get-FileHash dist/QuickSearch.exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  QuickSearch.exe" | Out-File -Encoding ascii -NoNewline dist/QuickSearch.exe.sha256
-          Write-Host "SHA-256: $hash"
+          Get-ChildItem dist\*.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Out-File -Encoding ascii -NoNewline "$($_.FullName).sha256"
+            Write-Host "$($_.Name): $hash"
+          }
 
       - name: 빌드 결과 보관
         uses: actions/upload-artifact@v4
@@ -59,6 +90,8 @@ jobs:
           path: |
             dist/QuickSearch.exe
             dist/QuickSearch.exe.sha256
+            dist/QuickSearch-Setup-*.exe
+            dist/QuickSearch-Setup-*.exe.sha256
           retention-days: 14
 
       - name: 릴리스 게시
@@ -68,5 +101,7 @@ jobs:
           files: |
             dist/QuickSearch.exe
             dist/QuickSearch.exe.sha256
+            dist/QuickSearch-Setup-*.exe
+            dist/QuickSearch-Setup-*.exe.sha256
           generate_release_notes: true
           fail_on_unmatched_files: true

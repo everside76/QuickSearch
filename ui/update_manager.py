@@ -44,6 +44,7 @@ class UpdateManager(QObject):
         self._checker: UpdateCheckWorker | None = None
         self._downloader: DownloadWorker | None = None
         self._progress: QProgressDialog | None = None
+        self._pending: UpdateInfo | None = None
         self._silent = False
 
     # ---- 진입점 ----
@@ -181,6 +182,7 @@ class UpdateManager(QObject):
         progress.setMinimumDuration(0)
         progress.setValue(0)
 
+        self._pending = info
         worker = DownloadWorker(info, self)
         progress.canceled.connect(worker.cancel)
         worker.progress.connect(self._on_progress)
@@ -218,8 +220,9 @@ class UpdateManager(QObject):
 
     def _on_downloaded(self, path: str) -> None:
         self._close_progress()
+        is_setup = bool(self._pending and self._pending.is_setup)
         try:
-            apply_update(path)
+            apply_update(path, is_setup=is_setup)
         except UpdateError as exc:
             QMessageBox.warning(self._parent, "업데이트 실패", str(exc))
             return
@@ -227,7 +230,9 @@ class UpdateManager(QObject):
         QMessageBox.information(
             self._parent,
             "업데이트 준비 완료",
-            "QuickSearch 를 종료하고 새 버전으로 교체합니다.\n잠시 후 자동으로 다시 실행됩니다.",
+            "QuickSearch 를 종료하고 설치 프로그램을 실행합니다.\n잠시 후 자동으로 다시 실행됩니다."
+            if is_setup
+            else "QuickSearch 를 종료하고 새 버전으로 교체합니다.\n잠시 후 자동으로 다시 실행됩니다.",
         )
         self._settings.remove("updates/skipped_version")
         self.quitRequested.emit()

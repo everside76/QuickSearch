@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 GITHUB_OWNER = "everside76"
 GITHUB_REPO = "QuickSearch"
@@ -13,8 +13,14 @@ GITHUB_REPO = "QuickSearch"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
-# 릴리스에 올라가는 실행 파일 이름
-ASSET_NAME = "QuickSearch.exe"
+# 릴리스에 올라가는 파일 이름
+ASSET_NAME = "QuickSearch.exe"                # 포터블 단일 실행 파일
+SETUP_ASSET_PREFIX = "quicksearch-setup"      # 설치 프로그램(QuickSearch-Setup-1.2.3.exe)
+
+# installer/QuickSearch.iss 의 AppId 와 반드시 같아야 한다.
+# 이 값으로 만들어지는 제거 레지스트리 키를 보고 '설치형인지'를 판정한다.
+APP_ID = "{8F3A7C21-5B4E-4C9A-9E2D-7A1B6C4D8E90}"
+UNINSTALL_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}_is1"
 
 
 def parse_version(text: str) -> tuple[int, ...]:

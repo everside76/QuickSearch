@@ -14,12 +14,23 @@
 - GitHub 릴리스 기반 자동 업데이트
 
 ## 설치
+
+### 설치 프로그램 (권장)
+[릴리스 페이지](https://github.com/everside76/QuickSearch/releases/latest)에서
+`QuickSearch-Setup-x.y.z.exe` 를 받아 실행하세요.
+
+- **관리자 권한이 필요 없습니다.** `%LOCALAPPDATA%\Programs\QuickSearch` 에 현재 사용자로만 설치됩니다.
+- 시작 메뉴 바로가기가 만들어지고, 설치 중 바탕화면 아이콘과 자동 실행을 선택할 수 있습니다.
+- 제거는 Windows 설정 → 앱 → QuickSearch 에서 합니다. 인덱스 캐시까지 함께 정리됩니다.
+- 설치형은 앱이 스스로 업데이트합니다(아래 참고).
+
+### 포터블
+설치 없이 쓰려면 같은 릴리스의 `QuickSearch.exe` 를 받아 아무 폴더에나 두고 실행하세요.
+USB 등에서 바로 쓸 수 있고, 역시 자동 업데이트가 동작합니다.
+
+### 소스에서 실행
 ```powershell
 pip install -r requirements.txt
-```
-
-## 실행
-```powershell
 python quicksearch.py
 ```
 
@@ -63,11 +74,20 @@ python tools/make_icon.py
 앱은 시작 후 잠시 뒤(하루 1회) GitHub 릴리스를 조회하고, 새 버전이 있으면 알립니다.
 트레이 메뉴의 **업데이트 확인** 으로 즉시 조회할 수도 있습니다.
 
-1. 최신 릴리스의 `QuickSearch.exe` 를 내려받습니다.
-2. 함께 올라온 `QuickSearch.exe.sha256` 으로 무결성을 검증합니다.
-3. 앱이 종료된 뒤 배치 스크립트가 실행 파일을 교체하고 새 버전을 다시 실행합니다.
+받는 파일은 지금 실행 중인 형태에 맞춰 자동으로 갈립니다.
 
-소스(`python quicksearch.py`)로 실행 중일 때는 파일 교체 대신 릴리스 페이지를 열어줍니다.
+| 실행 형태 | 받는 것 | 적용 방식 |
+|----------|--------|----------|
+| 설치형 | `QuickSearch-Setup-x.y.z.exe` | 앱 종료 후 설치 프로그램을 무음으로 실행해 덮어쓰고 재실행 |
+| 포터블 | `QuickSearch.exe` | 앱 종료 후 실행 파일을 교체하고 재실행 |
+| 소스 실행 | — | 릴리스 페이지를 열어줍니다 |
+
+어느 쪽이든 함께 올라온 `.sha256` 으로 무결성을 검증한 뒤에 적용합니다. 설치형 판정은
+설치 프로그램이 남긴 제거 레지스트리 키의 설치 경로와 현재 실행 파일 위치를 대조해서
+하므로, 같은 PC 에 설치본과 포터블이 함께 있어도 각자 맞는 방식으로 갱신됩니다.
+
+교체가 실패하면 `%TEMP%\quicksearch-update-error.log` 에 기록되고, 다음 실행 때
+트레이 알림으로 알려줍니다.
 
 ## 릴리스 방법
 버전은 `core/version.py` 의 `__version__` 하나가 기준입니다. 태그와 다르면
@@ -82,7 +102,8 @@ git push origin main --tags
 ```
 
 [.github/workflows/release.yml](.github/workflows/release.yml) 이 windows 러너에서
-PyInstaller 빌드 → 체크섬 생성 → 릴리스 게시를 수행합니다.
+PyInstaller 빌드 → Inno Setup 으로 설치 프로그램 생성 → 체크섬 → 릴리스 게시를 수행합니다.
+릴리스에는 설치 프로그램과 포터블 exe 가 함께 올라갑니다.
 
 ## 로컬 빌드 (선택)
 ```powershell
@@ -91,6 +112,12 @@ python tools/make_icon.py
 pyinstaller --noconfirm QuickSearch.spec
 ```
 빌드 후 `dist/QuickSearch.exe` 더블클릭으로 실행 가능.
+
+설치 프로그램까지 만들려면 [Inno Setup 6](https://jrsoftware.org/isdl.php) 이 필요합니다.
+```powershell
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.0.3 installer\QuickSearch.iss
+```
+결과물은 `dist/QuickSearch-Setup-1.0.3.exe` 입니다.
 
 ## 캐시 위치
 `%LOCALAPPDATA%\QuickSearch\quicksearch\index.pkl`

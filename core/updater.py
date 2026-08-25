@@ -25,9 +25,16 @@ from core.version import (
     ASSET_NAME,
     LATEST_RELEASE_API,
     RELEASES_PAGE,
+    SETUP_ASSET_PREFIX,
+    UNINSTALL_KEY,
     __version__,
     is_newer,
 )
+
+try:
+    import winreg  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - Windows 전용
+    winreg = None  # type: ignore[assignment]
 
 _TIMEOUT = 15
 _HEADERS = {
@@ -47,6 +54,7 @@ class UpdateInfo:
     download_url: str
     size: int
     sha256_url: str | None
+    is_setup: bool = False   # 설치 프로그램이면 True, 포터블 exe 면 False
     page_url: str = RELEASES_PAGE
 
     @property
@@ -58,16 +66,23 @@ class UpdateError(Exception):
     """업데이트 과정에서 사용자에게 보여줄 수 있는 오류."""
 
 
-def parse_release(payload: dict) -> UpdateInfo | None:
-    """GitHub 릴리스 JSON → UpdateInfo. 현재 버전 이하이거나 exe 가 없으면 None."""
+def parse_release(payload: dict, prefer_setup: bool | None = None) -> UpdateInfo | None:
+    """GitHub 릴리스 JSON → UpdateInfo. 현재 버전 이하이거나 받을 게 없으면 None.
+
+    prefer_setup 을 주지 않으면 지금 실행 중인 형태에 맞춰 고른다.
+    설치형이면 설치 프로그램을, 포터블이면 단일 exe 를 우선한다.
+    """
     tag = str(payload.get("tag_name") or "").strip()
     if not tag or payload.get("draft"):
         return None
     if not is_newer(tag):
         return None
 
+    if prefer_setup is None:
+        prefer_setup = is_installed()
+
     assets = payload.get("assets") or []
-    exe = _pick_asset(assets)
+    exe = _pick_asset(assets, prefer_setup)
     if exe is None:
         return None
 
@@ -85,24 +100,30 @@ def parse_release(payload: dict) -> UpdateInfo | None:
         download_url=str(exe["browser_download_url"]),
         size=int(exe.get("size") or 0),
         sha256_url=checksum_url,
+        is_setup=exe_name.startswith(SETUP_ASSET_PREFIX),
         page_url=str(payload.get("html_url") or RELEASES_PAGE),
     )
 
 
-def _pick_asset(assets: list) -> dict | None:
-    """릴리스 자산 중 내려받을 exe 하나를 고른다."""
-    exact = None
-    fallback = None
+def _pick_asset(assets: list, prefer_setup: bool) -> dict | None:
+    """릴리스 자산 중 내려받을 것 하나를 고른다."""
+    setup = None
+    portable = None
+    other = None
     for asset in assets:
         name = str(asset.get("name", "")).lower()
-        if not asset.get("browser_download_url"):
+        if not asset.get("browser_download_url") or not name.endswith(".exe"):
             continue
-        if name == ASSET_NAME.lower():
-            exact = asset
-            break
-        if fallback is None and name.endswith(".exe"):
-            fallback = asset
-    return exact or fallback
+        if name.startswith(SETUP_ASSET_PREFIX):
+            setup = setup or asset
+        elif name == ASSET_NAME.lower():
+            portable = portable or asset
+        else:
+            other = other or asset
+
+    if prefer_setup:
+        return setup or portable or other
+    return portable or setup or other
 
 
 def _get(url: str) -> bytes:
@@ -118,6 +139,36 @@ def is_frozen() -> bool:
 
 def current_exe() -> Path:
     return Path(sys.executable).resolve()
+
+
+def install_location() -> Path | None:
+    """설치 프로그램이 기록한 설치 폴더. 설치된 적이 없으면 None."""
+    if winreg is None:
+        return None
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, "InstallLocation")
+    except OSError:
+        return None
+    text = str(value or "").strip().strip('"')
+    return Path(text) if text else None
+
+
+def is_installed() -> bool:
+    """지금 도는 실행 파일이 '설치된 것'인지.
+
+    설치 폴더가 아닌 곳에서 포터블 exe 를 돌리는 경우와 구분해야 한다.
+    같은 PC 에 설치본과 포터블이 함께 있어도 각자 맞는 방식으로 갱신된다.
+    """
+    if not is_frozen():
+        return False
+    location = install_location()
+    if location is None:
+        return False
+    try:
+        return current_exe().parent == location.resolve()
+    except OSError:
+        return False
 
 
 class UpdateCheckWorker(QThread):
@@ -170,7 +221,7 @@ class DownloadWorker(QThread):
 
     def run(self) -> None:
         try:
-            target = _staging_path()
+            target = _staging_path(self._info.is_setup)
         except OSError:
             self.failed.emit("임시 파일을 만들 수 없습니다.")
             return
@@ -232,8 +283,15 @@ def checksum_matches(raw: str, actual: str) -> bool:
     return tokens[0].strip().lower() == actual.strip().lower()
 
 
-def _staging_path() -> Path:
-    """새 exe 를 받아둘 경로. 교체 대상과 같은 드라이브를 우선한다."""
+def _staging_path(is_setup: bool = False) -> Path:
+    """받아둘 파일 경로. 교체 대상과 같은 드라이브를 우선한다.
+
+    설치 프로그램은 어차피 실행만 하고 지울 것이므로 임시 폴더에 받는다.
+    """
+    if is_setup:
+        fd, name = tempfile.mkstemp(prefix="QuickSearch-Setup-", suffix=".exe")
+        os.close(fd)
+        return Path(name)
     if is_frozen():
         beside = current_exe().parent / (ASSET_NAME + ".new")
         try:
@@ -292,9 +350,43 @@ start "" "%TARGET%"
 del "%~f0"
 """
 
+# 설치형용. 앱이 종료되길 기다렸다가 설치 프로그램을 무음으로 돌린다.
+# 앱 재실행은 설치 프로그램의 [Run] 항목(Check: WizardSilent)이 맡는다.
+_INSTALL_SCRIPT = """@echo off
+setlocal
+set "PID=%~1"
+set "SETUP=%~2"
+set "SYS=%SystemRoot%\\System32"
 
-def apply_update(downloaded: str | Path) -> None:
-    """다운로드한 exe 로 교체하는 스크립트를 띄운다. 호출 직후 앱을 종료해야 한다.
+rem 1) Wait for the running QuickSearch process to exit (about 30s max).
+set /a TRIES=0
+:wait
+"%SYS%\\tasklist.exe" /fi "PID eq %PID%" /nh 2>nul | "%SYS%\\find.exe" "%PID%" >nul
+if errorlevel 1 goto install
+set /a TRIES+=1
+if %TRIES% GEQ 30 goto install
+"%SYS%\\ping.exe" -n 2 127.0.0.1 >nul
+goto wait
+
+:install
+"%SETUP%" /SILENT /NORESTART /SUPPRESSMSGBOXES /LOG="%TEMP%\\quicksearch-setup.log"
+if errorlevel 1 goto failed
+del "%SETUP%" >nul 2>&1
+del "%~f0"
+exit /b 0
+
+:failed
+echo QuickSearch update failed: installer exited with an error. See "%TEMP%\\quicksearch-setup.log".> "%TEMP%\\quicksearch-update-error.log"
+del "%SETUP%" >nul 2>&1
+exit /b 1
+"""
+
+
+def apply_update(downloaded: str | Path, is_setup: bool = False) -> None:
+    """받아둔 파일을 적용하는 스크립트를 띄운다. 호출 직후 앱을 종료해야 한다.
+
+    설치형이면 설치 프로그램을 무음으로 돌리고, 포터블이면 exe 를 교체한다.
+    어느 쪽이든 앱이 종료되기를 기다린 뒤에 진행한다.
 
     Raises:
         UpdateError: 소스 실행 중이거나 스크립트를 만들지 못한 경우.
@@ -309,7 +401,7 @@ def apply_update(downloaded: str | Path) -> None:
     script = Path(tempfile.gettempdir()) / f"quicksearch-update-{os.getpid()}.bat"
     try:
         # ascii 로 쓰는 것이 계약이다 — 위 주석 참고
-        script.write_text(_SWAP_SCRIPT, encoding="ascii")
+        script.write_text(_INSTALL_SCRIPT if is_setup else _SWAP_SCRIPT, encoding="ascii")
     except OSError as exc:
         raise UpdateError("업데이트 스크립트를 만들지 못했습니다.") from exc
 
@@ -317,16 +409,14 @@ def apply_update(downloaded: str | Path) -> None:
     # 콘솔 없이 뜬 cmd 가 배치 파일을 찾지 못해 교체가 조용히 실패한다.
     # 부모(QuickSearch)가 종료돼도 이 자식 프로세스는 살아남는다.
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+    if is_setup:
+        args = [str(os.getpid()), str(source.resolve())]
+    else:
+        args = [str(os.getpid()), str(current_exe()), str(source.resolve())]
+
     try:
         subprocess.Popen(
-            [
-                "cmd",
-                "/c",
-                str(script),
-                str(os.getpid()),
-                str(current_exe()),
-                str(source.resolve()),
-            ],
+            ["cmd", "/c", str(script), *args],
             creationflags=creation_flags,
             close_fds=True,
         )
