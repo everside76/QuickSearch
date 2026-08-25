@@ -91,6 +91,7 @@ class ResultItemWidget(QWidget):
 class SearchWindow(QMainWindow):
     querySubmitted = pyqtSignal(str)
     quitRequested = pyqtSignal()
+    hiddenToTray = pyqtSignal()
 
     def __init__(self, searcher: Searcher, stylesheet: str):
         super().__init__()
@@ -98,6 +99,8 @@ class SearchWindow(QMainWindow):
         self._icon_provider = QFileIconProvider()
         self._index_ready = False
         self._force_quit = False
+        # 트레이가 없으면 숨긴 창을 되살릴 방법이 없으므로 닫기를 종료로 처리한다
+        self._tray_available = True
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -129,20 +132,13 @@ class SearchWindow(QMainWindow):
         tb_layout.addWidget(self._title_label)
         tb_layout.addStretch(1)
 
-        self._btn_tray = QPushButton("−")
-        self._btn_tray.setObjectName("trayButton")
-        self._btn_tray.setFixedSize(28, 24)
-        self._btn_tray.setToolTip("트레이로 숨기기 (Esc)")
-        self._btn_tray.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_tray.clicked.connect(self.hide_to_tray)
-        tb_layout.addWidget(self._btn_tray)
-
+        # × 는 종료가 아니라 트레이로 숨기기 — 종료는 트레이 메뉴 또는 Ctrl+Q
         self._btn_close = QPushButton("×")
         self._btn_close.setObjectName("closeButton")
         self._btn_close.setFixedSize(28, 24)
-        self._btn_close.setToolTip("종료 (Ctrl+Q)")
+        self._btn_close.setToolTip("트레이로 숨기기 (Esc)")
         self._btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_close.clicked.connect(self.request_quit)
+        self._btn_close.clicked.connect(self.hide_to_tray)
         tb_layout.addWidget(self._btn_close)
 
         self._title_bar = title_bar
@@ -193,8 +189,20 @@ class SearchWindow(QMainWindow):
         self._center_on_screen()
 
     # ---- 트레이 / 종료 ----
+    def set_tray_available(self, available: bool) -> None:
+        """트레이 아이콘이 실제로 떠 있는지 알려준다. 없으면 × 는 종료로 동작한다."""
+        self._tray_available = available
+        self._btn_close.setToolTip("트레이로 숨기기 (Esc)" if available else "종료 (Ctrl+Q)")
+
     def hide_to_tray(self) -> None:
+        if not self._tray_available:
+            # 숨겨도 다시 부를 수단이 없으므로 종료가 유일하게 안전한 동작
+            self.request_quit()
+            return
+        if not self.isVisible():
+            return
         self.hide()
+        self.hiddenToTray.emit()
 
     def show_and_focus(self) -> None:
         self.showNormal()
@@ -276,7 +284,8 @@ class SearchWindow(QMainWindow):
             self._reveal_in_explorer(path, is_dir)
         else:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
-        QApplication.quit()
+        # 결과를 연 뒤에는 창만 접는다 — 앱은 트레이에 남는다
+        self.hide_to_tray()
 
     def _reveal_in_explorer(self, path: str, is_dir: bool) -> None:
         try:

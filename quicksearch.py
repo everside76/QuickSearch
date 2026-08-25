@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QAction, QFont, QIcon
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -92,6 +93,23 @@ def build_tray(
                 window.show_and_focus()
 
     tray.activated.connect(on_activated)
+
+    settings = QSettings("QuickSearch", "QuickSearch")
+
+    def on_hidden_to_tray() -> None:
+        # × 로 창을 접었을 때 앱이 종료된 줄 오해하지 않도록 최초 1회만 안내한다
+        if settings.value("tray/hint_shown", False, type=bool):
+            return
+        settings.setValue("tray/hint_shown", True)
+        tray.showMessage(
+            "QuickSearch 는 트레이에서 계속 실행 중입니다",
+            "아이콘을 클릭하면 다시 열리고, 우클릭 메뉴에서 종료할 수 있습니다.",
+            icon,
+            6000,
+        )
+
+    window.hiddenToTray.connect(on_hidden_to_tray)
+
     tray.show()
     return tray
 
@@ -146,6 +164,7 @@ def main() -> int:
     if QSystemTrayIcon.isSystemTrayAvailable():
         tray = build_tray(app, window, icon, updates)
         updates.set_tray(tray)
+    window.set_tray_available(tray is not None)
 
     updates.schedule_auto_check()
 

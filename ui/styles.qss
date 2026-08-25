@@ -18,7 +18,8 @@
     letter-spacing: 0.5px;
 }
 
-#trayButton, #closeButton {
+/* × 는 종료가 아니라 트레이로 숨기기이므로 경고색(빨강)을 쓰지 않는다 */
+#closeButton {
     background: transparent;
     color: rgba(235, 235, 245, 180);
     border: none;
@@ -28,17 +29,12 @@
     padding: 0;
 }
 
-#trayButton:hover {
+#closeButton:hover {
     background-color: rgba(255, 255, 255, 28);
     color: #ffffff;
 }
 
-#closeButton:hover {
-    background-color: #E81123;
-    color: #ffffff;
-}
-
-#trayButton:pressed, #closeButton:pressed {
+#closeButton:pressed {
     background-color: rgba(255, 255, 255, 50);
 }
 
