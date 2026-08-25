@@ -248,25 +248,46 @@ def _staging_path() -> Path:
     return Path(name)
 
 
+# 이 배치는 반드시 순수 ASCII 로 유지한다.
+#   - 비ASCII 문자를 넣으려면 chcp 로 코드페이지를 바꿔야 하는데, cmd 는 배치를
+#     바이트 오프셋으로 읽기 때문에 실행 중 코드페이지가 바뀌면 파싱 위치를 잃는다.
+#   - 그래서 경로·PID 는 파일에 박지 않고 명령행 인자로 넘긴다. 인자는 코드페이지를
+#     타지 않으므로 한글이 섞인 경로도 안전하다.
+#   - 외부 명령은 절대 경로로 부른다. Git/MSYS 가 PATH 앞에 있으면 find.exe 와
+#     ping.exe 가 동명의 GNU 도구로 가려져 대기 루프가 무력화된다.
 _SWAP_SCRIPT = """@echo off
-chcp 65001 >nul
 setlocal
-set "PID={pid}"
-set "TARGET={target}"
-set "SOURCE={source}"
+set "PID=%~1"
+set "TARGET=%~2"
+set "SOURCE=%~3"
+set "SYS=%SystemRoot%\\System32"
 
-rem 실행 중인 QuickSearch 가 완전히 종료될 때까지 대기(최대 약 30초)
+rem 1) Wait for the running QuickSearch process to exit (about 30s max).
 set /a TRIES=0
 :wait
-tasklist /fi "PID eq %PID%" 2>nul | find "%PID%" >nul || goto swap
+"%SYS%\\tasklist.exe" /fi "PID eq %PID%" /nh 2>nul | "%SYS%\\find.exe" "%PID%" >nul
+if errorlevel 1 goto swap
 set /a TRIES+=1
 if %TRIES% GEQ 30 goto swap
-ping -n 2 127.0.0.1 >nul
+"%SYS%\\ping.exe" -n 2 127.0.0.1 >nul
 goto wait
 
+rem 2) Replace the exe. A still-running exe stays locked, so retry a while.
 :swap
-move /y "%SOURCE%" "%TARGET%" >nul
-if errorlevel 1 exit /b 1
+set /a ATTEMPT=0
+:trymove
+move /y "%SOURCE%" "%TARGET%" >nul 2>&1
+if not errorlevel 1 goto launch
+set /a ATTEMPT+=1
+if %ATTEMPT% GEQ 15 goto failed
+"%SYS%\\ping.exe" -n 2 127.0.0.1 >nul
+goto trymove
+
+:failed
+echo QuickSearch update failed: could not replace "%TARGET%".> "%TEMP%\\quicksearch-update-error.log"
+exit /b 1
+
+:launch
 start "" "%TARGET%"
 del "%~f0"
 """
@@ -286,24 +307,26 @@ def apply_update(downloaded: str | Path) -> None:
         raise UpdateError("내려받은 파일을 찾을 수 없습니다.")
 
     script = Path(tempfile.gettempdir()) / f"quicksearch-update-{os.getpid()}.bat"
-    body = _SWAP_SCRIPT.format(
-        pid=os.getpid(),
-        target=str(current_exe()),
-        source=str(source.resolve()),
-    )
     try:
-        script.write_text(body, encoding="utf-8")
+        # ascii 로 쓰는 것이 계약이다 — 위 주석 참고
+        script.write_text(_SWAP_SCRIPT, encoding="ascii")
     except OSError as exc:
         raise UpdateError("업데이트 스크립트를 만들지 못했습니다.") from exc
 
-    creation_flags = 0
-    if sys.platform == "win32":
-        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
-            subprocess, "DETACHED_PROCESS", 0
-        )
+    # CREATE_NO_WINDOW 만 준다. DETACHED_PROCESS 를 함께(또는 단독으로) 주면
+    # 콘솔 없이 뜬 cmd 가 배치 파일을 찾지 못해 교체가 조용히 실패한다.
+    # 부모(QuickSearch)가 종료돼도 이 자식 프로세스는 살아남는다.
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
     try:
         subprocess.Popen(
-            ["cmd", "/c", str(script)],
+            [
+                "cmd",
+                "/c",
+                str(script),
+                str(os.getpid()),
+                str(current_exe()),
+                str(source.resolve()),
+            ],
             creationflags=creation_flags,
             close_fds=True,
         )

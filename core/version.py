@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 GITHUB_OWNER = "everside76"
 GITHUB_REPO = "QuickSearch"

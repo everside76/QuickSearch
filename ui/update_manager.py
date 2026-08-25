@@ -5,7 +5,9 @@
 """
 from __future__ import annotations
 
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from PyQt6.QtCore import QObject, QSettings, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
@@ -54,9 +56,28 @@ class UpdateManager(QObject):
 
     def schedule_auto_check(self) -> None:
         """앱 시작 시 1회 호출. 마지막 확인이 24시간 이내면 건너뛴다."""
+        QTimer.singleShot(AUTO_CHECK_DELAY_MS, self._report_previous_failure)
         if not self._auto_check_due():
             return
         QTimer.singleShot(AUTO_CHECK_DELAY_MS, lambda: self._start_check(silent=True))
+
+    def _report_previous_failure(self) -> None:
+        """지난 실행에서 exe 교체가 실패했다면 알려준다.
+
+        교체 스크립트는 앱이 죽은 뒤에 돌기 때문에 실패를 그 자리에서 알릴 수 없다.
+        대신 로그를 남겨두고, 다음 실행 때 이 자리에서 확인한다.
+        """
+        log = Path(tempfile.gettempdir()) / "quicksearch-update-error.log"
+        if not log.is_file():
+            return
+        try:
+            log.unlink()
+        except OSError:
+            pass
+        self._notify(
+            "지난 업데이트가 적용되지 않았습니다",
+            "새 버전으로 교체하지 못했습니다. 트레이 메뉴에서 다시 시도해 주세요.",
+        )
 
     # ---- 확인 ----
     def _auto_check_due(self) -> bool:
