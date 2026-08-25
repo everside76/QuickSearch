@@ -13,6 +13,11 @@ jobs:
   build-windows:
     runs-on: windows-latest
 
+    # 러너의 기본 stdout 인코딩(cp1252)에서는 한국어 로그가 UnicodeEncodeError 를 낸다
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+
     steps:
       - uses: actions/checkout@v4
 
